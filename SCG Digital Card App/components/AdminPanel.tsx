@@ -1,11 +1,12 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { generateWinnerAnnouncement } from '../services/geminiService';
 import WinnerDisplay from './WinnerDisplay';
 import AdminQRScanner from './AdminQRScanner';
 import type { Participant } from '../types';
-import { ScanLine, Download, Trash2 } from 'lucide-react';
+import { ScanLine, Download, Trash2, KeyRound } from 'lucide-react';
 import { MIN_STAMPS_FOR_LUCKY_DRAW } from '../constants';
+
+// Fix: Moved AIStudio type and window.aistudio declaration to types.ts to resolve global type conflicts.
 
 interface AdminPanelProps {
   onExit: () => void;
@@ -22,10 +23,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onExit, teams, onTeamsChange })
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  
+  // API Key State
+  const [apiKeyReady, setApiKeyReady] = useState(false);
+  const [isCheckingApiKey, setIsCheckingApiKey] = useState(true);
 
   // Team Management State
   const [editableTeams, setEditableTeams] = useState(teams.join('\n'));
   const [teamSaveMessage, setTeamSaveMessage] = useState('');
+
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (window.aistudio) {
+        setIsCheckingApiKey(true);
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setApiKeyReady(hasKey);
+        setIsCheckingApiKey(false);
+      } else {
+        // Fallback for environments where aistudio is not available
+        setIsCheckingApiKey(false);
+        setApiKeyReady(!!process.env.API_KEY);
+      }
+    };
+    checkApiKey();
+  }, []);
 
   const allParsedParticipants = useMemo((): Participant[] => {
     return participantData
@@ -62,6 +83,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onExit, teams, onTeamsChange })
     }
   };
 
+  const handleSelectKey = async () => {
+    await window.aistudio.openSelectKey();
+    setApiKeyReady(true); // Assume success per guidelines
+    setError('');
+  };
+
   const handleDraw = async () => {
     if (eligibleParticipants.length === 0) {
       setError('Please add at least one eligible participant.');
@@ -88,9 +115,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onExit, teams, onTeamsChange })
     
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const generatedAnnouncement = await generateWinnerAnnouncement(drawnWinners);
-    setAnnouncement(generatedAnnouncement);
-    setIsLoading(false);
+    try {
+        const generatedAnnouncement = await generateWinnerAnnouncement(drawnWinners);
+        setAnnouncement(generatedAnnouncement);
+    } catch (e) {
+      console.error(e);
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      if (errorMessage.includes("API key not valid") || errorMessage.includes("Requested entity was not found")) {
+        setError("Your API key is invalid. Please select a valid API key.");
+        setApiKeyReady(false); // Reset key status to prompt user again
+      }
+      // Set a fallback announcement if the API call fails for any reason
+      setAnnouncement(`A huge round of applause for our lucky winners: ${drawnWinners.join(', ')}! Congratulations!`);
+    } finally {
+        setIsLoading(false);
+    }
   };
   
   const resetDraw = () => {
@@ -191,11 +230,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onExit, teams, onTeamsChange })
               />
             </div>
           </div>
-          {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
+          
+          {error && <p className="text-red-500 text-sm mt-4 text-center font-semibold">{error}</p>}
+
+          {isCheckingApiKey ? (
+            <div className="text-center mt-6 text-slate-500">Checking for Gemini API key...</div>
+          ) : !apiKeyReady && (
+            <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-center space-y-2">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                    To generate a fun winner announcement with the Gemini API, please select an API key. 
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline font-medium ml-1">Learn about billing.</a>
+                </p>
+                <button
+                    onClick={handleSelectKey}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                    <KeyRound size={16} /> Select API Key
+                </button>
+            </div>
+          )}
+
           <div className="mt-6">
             <button
               onClick={handleDraw}
-              disabled={isLoading}
+              disabled={isLoading || !apiKeyReady}
               className="w-full py-3 px-4 rounded-md text-white font-semibold bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
             >
               {isLoading ? 'Drawing...' : 'Draw Winners'}
