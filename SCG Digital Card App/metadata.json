@@ -1,0 +1,8 @@
+
+{
+  "name": "SCG Digital Stamp Card",
+  "description": "A digital stamp card application for events. Users can collect stamps from various booths, and administrators can run a lucky draw for participants who have collected a certain number of stamps.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
