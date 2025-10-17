@@ -1,4 +1,10 @@
 {
   "buildCommand": "echo 'Skipping build step'",
-  "installCommand": "echo 'Skipping install step'"
+  "installCommand": "echo 'Skipping install step'",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
 }
